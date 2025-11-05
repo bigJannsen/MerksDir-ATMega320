@@ -65,7 +65,7 @@ uint32_t zeit_ms(void) {
 
 // ---------------- LCD ----------------
 // Kurzer Puls auf Enable-Pin
-void lcd_zucken(void) {
+void lcd_anfangspuls(void) {
     PORTB |= (1 << LCD_E);
     _delay_us(1);
     PORTB &= ~(1 << LCD_E);
@@ -73,40 +73,40 @@ void lcd_zucken(void) {
 }
 
 // 4Bit an LCD
-void lcd_halbbyte(uint8_t teil) {
+void lcd_communicator(uint8_t teil) {
     (teil & 0x01) ? (PORTD |= (1 << LCD_D4)) : (PORTD &= ~(1 << LCD_D4));
     (teil & 0x02) ? (PORTD |= (1 << LCD_D5)) : (PORTD &= ~(1 << LCD_D5));
     (teil & 0x04) ? (PORTD |= (1 << LCD_D6)) : (PORTD &= ~(1 << LCD_D6));
     (teil & 0x08) ? (PORTD |= (1 << LCD_D7)) : (PORTD &= ~(1 << LCD_D7));
-    lcd_zucken();
+    lcd_anfangspuls();
 }
 
 // Schickt Befehle (z. B. Cursor, Clear usw.)
-void lcd_befehl(uint8_t befehl) {
+void lcd_befehlsgeber(uint8_t befehl) {
     PORTB &= ~(1 << LCD_RS);
-    lcd_halbbyte(befehl >> 4);
-    lcd_halbbyte(befehl & 0x0F);
+    lcd_communicator(befehl >> 4);
+    lcd_communicator(befehl & 0x0F);
     _delay_ms(2);
 }
 
 // Schreibt Zeichen
 void lcd_zeichen(uint8_t zeichen) {
     PORTB |= (1 << LCD_RS);
-    lcd_halbbyte(zeichen >> 4);
-    lcd_halbbyte(zeichen & 0x0F);
+    lcd_communicator(zeichen >> 4);
+    lcd_communicator(zeichen & 0x0F);
     _delay_ms(2);
 }
 
 // Display löschen
 void lcd_clear(void) {
-    lcd_befehl(0x01);
+    lcd_befehlsgeber(0x01);
     _delay_ms(2);
 }
 
 // Cursorposition setzen
-void lcd_hinsetzen(uint8_t x, uint8_t y) {
+void lcd_cursorsetzer(uint8_t x, uint8_t y) {
     uint8_t addr = (y == 0 ? 0x00 : 0x40) + x; // wichtig: Zeilenversatz
-    lcd_befehl(0x80 | addr);
+    lcd_befehlsgeber(0x80 | addr);
 }
 
 // Text schreiben
@@ -117,31 +117,32 @@ void lcd_schreiben(const char *text) {
 // LCD initialisieren (4-Bit-Modus aktivieren)
 // Dauert am Anfang ein paar ms, Display will "aufwachen"
 void lcd_hochfahren(void) {
+    // |= Kurzschreibweise für xxx = xxx | bedingung
     DDRB |= (1 << LCD_RS) | (1 << LCD_E) | (1 << PIEZO);
     DDRD |= (1 << LCD_D4) | (1 << LCD_D5) | (1 << LCD_D6) | (1 << LCD_D7)
           | (1 << LED1) | (1 << LED2) | (1 << LED3) | (1 << LED4);
 
     _delay_ms(40);
-    lcd_halbbyte(0x03);
+    lcd_communicator(0x03);
     _delay_ms(5);
-    lcd_halbbyte(0x03);
+    lcd_communicator(0x03);
     _delay_us(150);
-    lcd_halbbyte(0x03);
+    lcd_communicator(0x03);
     _delay_us(150);
-    lcd_halbbyte(0x02);
+    lcd_communicator(0x02);
     _delay_us(150);
 
-    lcd_befehl(0x28); // 2 Zeilen, 5x8 Font
-    lcd_befehl(0x08); // Display aus
-    lcd_befehl(0x01); // löschen
+    lcd_befehlsgeber(0x28); // 2 Zeilen, 5x8 Font
+    lcd_befehlsgeber(0x08); // Display aus
+    lcd_befehlsgeber(0x01); // löschen
     _delay_ms(2);
-    lcd_befehl(0x06); // Cursor nach rechts
-    lcd_befehl(0x0C); // Display an, Cursor aus
+    lcd_befehlsgeber(0x06); // Cursor nach rechts
+    lcd_befehlsgeber(0x0C); // Display an, Cursor aus
 }
 
 // ---------------- Piezo ----------------
 // Macht ein "Biep" mit Frequenz Dauer und Lautstärke
-void mach_biep(uint16_t freq, uint16_t dauer, uint8_t laut) {
+void bieper(uint16_t freq, uint16_t dauer, uint8_t laut) {
     if (freq == 0) {
         _delay_ms(dauer);
         return;
@@ -184,26 +185,34 @@ uint8_t reset_gedrueckt(void) {
 int warte_auf_spieler(uint32_t timeout) {
     uint32_t start = zeit_ms();
     while (1) {
-        if (reset_gedrueckt()) return -2;             
+        if (reset_gedrueckt()) return -2;
         if ((zeit_ms() - start) > timeout) return -1; // Timeout
 
-        if (!(PINC & (1 << T1))) { _delay_ms(20); while(!(PINC&(1<<T1))); return 0; }
-        if (!(PINC & (1 << T2))) { _delay_ms(20); while(!(PINC&(1<<T2))); return 1; }
-        if (!(PINC & (1 << T3))) { _delay_ms(20); while(!(PINC&(1<<T3))); return 2; }
-        if (!(PINC & (1 << T4))) { _delay_ms(20); while(!(PINC&(1<<T4))); return 3; }
-    }
+        if ((PINC & (1 << T1)) == 0) {
+            _delay_ms(20);
+            while ((PINC & (1 << T1)) == 0) {} return 0; }
+        if ((PINC & (1 << T2)) == 0) {
+            _delay_ms(20);
+            while ((PINC & (1 << T2)) == 0) {} return 1; }
+        if ((PINC & (1 << T3)) == 0) {
+            _delay_ms(20);
+            while ((PINC & (1 << T3)) == 0) {} return 2; }
+        if ((PINC & (1 << T4)) == 0) {
+            _delay_ms(20);
+            while ((PINC & (1 << T4)) == 0) {} return 3; }
+        }       // Für Einzeiler entschieden, weil Langform vieeeel zu lang
 }
 
 // Neue zufällige Blinkfolge basteln
-void zufalls_folge(int laenge) {
+void zufallsfolge(int laenge) {
     for (int i = 0; i < laenge; i++)
         merkfolge[i] = rand() % 4;
 }
 
 // Zeigt aktuellen Punktestand
-void lcd_zeige_stand(void) {
+void lcd_aktuellerscore(void) {
     char buf[6];
-    lcd_hinsetzen(0, 1);
+    lcd_cursorsetzer(0, 1);
     lcd_schreiben("Punkte: ");
     itoa(spielstand, buf, 10);
     lcd_schreiben(buf);
@@ -211,19 +220,19 @@ void lcd_zeige_stand(void) {
 }
 
 // Spielt die Blink- und Tonfolge ab
-void zeig_folge(int laenge) {
+void led_blinkreihenfolge(int laenge) {
     lcd_clear();
     lcd_schreiben("Merken...");
-    lcd_zeige_stand();
+    lcd_aktuellerscore();
     _delay_ms(500);
 
     for (int i = 0; i < laenge; i++) {
         led_an(merkfolge[i]);
         switch (merkfolge[i]) {
-            case 0: mach_biep(329, 300, 5); break;
-            case 1: mach_biep(261, 300, 5); break;
-            case 2: mach_biep(392, 300, 5); break;
-            case 3: mach_biep(523, 300, 5); break;
+            case 0: bieper(329, 300, 5); break;
+            case 1: bieper(261, 300, 5); break;
+            case 2: bieper(392, 300, 5); break;
+            case 3: bieper(523, 300, 5); break;
         }
         alle_leds_aus();
         _delay_ms(200);
@@ -234,7 +243,7 @@ void zeig_folge(int laenge) {
 uint8_t spieler_eingabe(int laenge) {
     lcd_clear();
     lcd_schreiben("Dein Zug...");
-    lcd_zeige_stand();
+    lcd_aktuellerscore();
 
     for (int i = 0; i < laenge; i++) {
         int gedrueckt = warte_auf_spieler(20000);
@@ -243,19 +252,19 @@ uint8_t spieler_eingabe(int laenge) {
 
         led_an(gedrueckt);
         switch (gedrueckt) {
-            case 0: mach_biep(329, 300, 5); break;
-            case 1: mach_biep(261, 300, 5); break;
-            case 2: mach_biep(392, 300, 5); break;
-            case 3: mach_biep(523, 300, 5); break;
+            case 0: bieper(329, 300, 5); break;
+            case 1: bieper(261, 300, 5); break;
+            case 2: bieper(392, 300, 5); break;
+            case 3: bieper(523, 300, 5); break;
         }
         alle_leds_aus();
 
-        if (gedrueckt != merkfolge[i]) return 0; // Falsch 
+        if (gedrueckt != merkfolge[i]) return 0; // Falsch
     }
-    return 1; 
+    return 1;
 }
 
-// Hauptlogik vom Spiel
+// ---------------- Hauptlogik vom Spiel ----------------
 void spiel_geht_los(void) {
     lcd_clear();
     lcd_schreiben("Let's go!");
@@ -266,45 +275,45 @@ void spiel_geht_los(void) {
     srand(zeit_ms()); // Zufall auch nach Neustart???
 
     while (1) {
-        zufalls_folge(laenge);
-        zeig_folge(laenge);
+        zufallsfolge(laenge);
+        led_blinkreihenfolge(laenge);
         uint8_t ergebnis = spieler_eingabe(laenge);
 
         if (ergebnis == 1) { // Richtig
             spielstand++;
             lcd_clear();
             lcd_schreiben("Richtig!");
-            lcd_zeige_stand();
+            lcd_aktuellerscore();
             _delay_ms(700);
             laenge++;
-        } 
+        }
         else if (ergebnis == 0) { // Falsch
             lcd_clear();
             lcd_schreiben("Uuuh falsch!");
-            mach_biep(500, 300, 5);
-            mach_biep(300, 500, 5);
+            bieper(500, 300, 5);
+            bieper(300, 500, 5);
             _delay_ms(1000);
             lcd_clear();
             lcd_schreiben("Game Over");
-            lcd_hinsetzen(0,1);
+            lcd_cursorsetzer(0,1);
             lcd_schreiben("Punkte: ");
             char buf[6];
             itoa(spielstand, buf, 10);
             lcd_schreiben(buf);
             _delay_ms(2500);
             break;
-        } 
+        }
         else if (ergebnis == 2) { // Reset gedrückt
             lcd_clear();
             lcd_schreiben("Abgebrochen!");
-            mach_biep(600, 300, 5);
+            bieper(600, 300, 5);
             _delay_ms(1500);
             break;
-        } 
+        }
         else if (ergebnis == 3) { // Timeout
             lcd_clear();
             lcd_schreiben("Zu spaet!");
-            mach_biep(300, 500, 5);
+            bieper(300, 500, 5);
             _delay_ms(1500);
             break;
         }
